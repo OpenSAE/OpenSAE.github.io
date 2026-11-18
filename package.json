@@ -1,0 +1,8 @@
+{
+  "name": "opensae-website",
+  "private": true,
+  "description": "Browser dependencies for verifying the static OpenSAE website and Atlas pages.",
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}

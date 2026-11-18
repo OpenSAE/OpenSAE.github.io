@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +32,19 @@ jobs:
         run: |
           mkdir _site
           git archive HEAD -- '*.html' '*.css' '*.js' assets/ data/ openresearch/atlas/ saebase/atlas/ saebase/atlas-preview/ | tar -x -C _site
+      - name: Install Chromium for Atlas checks
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Check the staged Atlas pages in Chromium
+        run: |
+          python -m http.server 8765 --bind 127.0.0.1 --directory _site > "$RUNNER_TEMP/site-http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          curl --fail --silent --retry 5 --retry-connrefused http://127.0.0.1:8765/index.html -o /dev/null
+          cd "$RUNNER_TEMP"
+          node "$GITHUB_WORKSPACE/test/saebase_atlas_browser.cjs"
+          node "$GITHUB_WORKSPACE/test/atlas_preview_ui.cjs"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
