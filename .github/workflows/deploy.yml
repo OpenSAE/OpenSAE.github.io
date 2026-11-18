@@ -1,0 +1,51 @@
+# Publishes the static OpenSAE website from the organization repository.
+# Runs on main updates and manual dispatches after GitHub Pages is enabled.
+name: Deploy OpenSAE website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Atlas snapshots
+        run: |
+          node test/saebase_atlas_structure.cjs
+          node test/atlas_public_structure.cjs
+      - name: Stage public files
+        run: |
+          mkdir _site
+          git archive HEAD -- '*.html' '*.css' '*.js' assets/ data/ openresearch/atlas/ saebase/atlas/ saebase/atlas-preview/ | tar -x -C _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

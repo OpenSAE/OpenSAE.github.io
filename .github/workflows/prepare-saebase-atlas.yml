@@ -1,0 +1,65 @@
+# Builds a reviewable SAEBase Atlas snapshot from a maintainer-selected source commit.
+# Run manually for a commit in OpenSAE/SAEBase that contains the Atlas generator.
+name: Prepare SAEBase Atlas snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full SHA of the SAEBase commit containing the Atlas generator
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch the selected SAEBase source
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Enter a full 40-character Git commit SHA."
+            exit 1
+          }
+          git init "$RUNNER_TEMP/SAEBase"
+          git -C "$RUNNER_TEMP/SAEBase" fetch --depth 1 https://github.com/OpenSAE/SAEBase.git "$SOURCE_COMMIT"
+          git -C "$RUNNER_TEMP/SAEBase" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/SAEBase" rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test -f "$RUNNER_TEMP/SAEBase/harness/visualization/package_site.py" || {
+            echo "The selected SAEBase commit does not contain the Atlas generator."
+            exit 1
+          }
+      - name: Build and check the generated snapshot
+        run: |
+          cd "$RUNNER_TEMP/SAEBase"
+          python harness/core/validate.py
+          python harness/knowledge/validate.py
+          python harness/code/build.py
+          python harness/visualization/export.py
+          python harness/code/audit_semantics.py --check --output "$RUNNER_TEMP/atlas-semantic-audit.json"
+          python harness/visualization/build_pages.py
+          python harness/visualization/build_language.py
+          python harness/visualization/build_language.py --check
+          python harness/visualization/package_site.py --output "$GITHUB_WORKSPACE/saebase/atlas"
+          cd "$GITHUB_WORKSPACE"
+          sed -i 's|href="../../README.md"|href="../../saebase.html"|g; s|href="../README.md"|href="https://github.com/OpenSAE/SAEBase#readme"|g' saebase/atlas/index.html
+          node test/saebase_atlas_structure.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saebase-atlas
+          path: saebase/atlas/
+          if-no-files-found: error
